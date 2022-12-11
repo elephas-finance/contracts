@@ -1032,7 +1032,7 @@ pub enum QueryAnswer {
     ContractCreator {
         creator: Option<HumanAddr>,
     },
-    IsExpired {
+    IsSubscriptionExpired {
         expired: bool,
     },
 }

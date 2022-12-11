@@ -3214,20 +3214,23 @@ pub fn query_code_hash<S: Storage, A: Api, Q: Querier>(
 pub fn is_subscription_expired<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     token_id: String,
-    viewer: ViewerInfo,
+    viewer: Option<ViewerInfo>,
 ) -> QueryResult {
-    let contract_raw = deps.api.canonical_address(contract)?;
+    let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+        height: 1,
+        time: 1,
+        chain_id: "not used".to_string(),
+    });
+
     let store = ReadonlyPrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &deps.storage);
-    let may_reg_rec: Option<ReceiveRegistration> = may_load(&store, contract_raw.as_slice())?;
-    if let Some(reg_rec) = may_reg_rec {
-        return to_binary(&QueryAnswer::RegisteredCodeHash {
-            code_hash: Some(reg_rec.code_hash),
-            also_implements_batch_receive_nft: reg_rec.impl_batch,
-        });
+    let may_exp: Option<Expiration> = may_load(&store, token_id.as_bytes())?;
+    if may_exp.is_none() {
+        return to_binary(&QueryAnswer::IsSubscriptionExpired { expired: false });
     }
-    to_binary(&QueryAnswer::RegisteredCodeHash {
-        code_hash: None,
-        also_implements_batch_receive_nft: false,
+    let expiry = may_exp.unwrap();
+
+    to_binary(&QueryAnswer::IsSubscriptionExpired {
+        expired: expiry.is_expired(&block),
     })
 }
 
