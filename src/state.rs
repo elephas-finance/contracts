@@ -27,6 +27,8 @@ pub const PRNG_SEED_KEY: &[u8] = b"prngseed";
 pub const CREATOR_KEY: &[u8] = b"creator";
 /// storage key for the default RoyaltyInfo to use if none is supplied when minting
 pub const DEFAULT_ROYALTY_KEY: &[u8] = b"defaultroy";
+/// storage key for the subscription details
+pub const SUBSCRIPTION_DETAILS_KEY: &[u8] = b"subdetails";
 /// prefix for storage that maps ids to indices
 pub const PREFIX_MAP_TO_INDEX: &[u8] = b"map2idx";
 /// prefix for storage that maps indices to ids
@@ -39,6 +41,8 @@ pub const PREFIX_PUB_META: &[u8] = b"publicmeta";
 pub const PREFIX_PRIV_META: &[u8] = b"privatemeta";
 /// prefix for the storage of royalty information
 pub const PREFIX_ROYALTY_INFO: &[u8] = b"royalty";
+/// prefix for the storage of royalty information
+pub const PREFIX_SUB_EXPIRY_INFO: &[u8] = b"subexpinfo";
 /// prefix for the storage of mint run information
 pub const PREFIX_MINT_RUN: &[u8] = b"mintrun";
 /// prefix for storage of txs
@@ -91,6 +95,8 @@ pub struct Config {
     pub owner_may_update_metadata: bool,
     /// is burn enabled
     pub burn_is_enabled: bool,
+    /// is subscription enabled
+    pub subscription_is_enabled: bool,
 }
 
 /// tx type and specifics
@@ -119,6 +125,16 @@ pub enum StoredTxAction {
         owner: CanonicalAddr,
         /// burner's address if not owner
         burner: Option<CanonicalAddr>,
+    },
+    /// renwed subscription
+    SubscriptionRenewed {
+        /// owner
+        owner: CanonicalAddr,
+    },
+    /// cancelled subscription
+    SubcriptionCancelled {
+        /// owner
+        owner: CanonicalAddr,
     },
 }
 
@@ -179,6 +195,12 @@ impl StoredTx {
                     burner: bnr,
                 }
             }
+            StoredTxAction::SubscriptionRenewed { owner } => TxAction::SubscriptionRenewed {
+                owner: api.human_address(&owner)?,
+            },
+            StoredTxAction::SubcriptionCancelled { owner } => TxAction::SubcriptionCancelled {
+                owner: api.human_address(&owner)?,
+            },
         };
         let tx = Tx {
             tx_id: self.tx_id,
@@ -326,6 +348,79 @@ pub fn store_burn<S: Storage>(
         if let Some(bnr) = burner.as_ref() {
             append_tx_for_addr(storage, config.tx_cnt, bnr)?;
         }
+    }
+    config.tx_cnt += 1;
+    Ok(())
+}
+
+/// Returns StdResult<()> after storing tx
+///
+/// # Arguments
+///
+/// * `storage` - a mutable reference to the storage this item should go to
+/// * `config` - a mutable reference to the contract Config
+/// * `block` - a reference to the current BlockInfo
+/// * `token_id` - token id being minted
+/// * `owner` - the owner's address
+/// * `memo` - optional memo for the tx
+pub fn store_subcription_renew<S: Storage>(
+    storage: &mut S,
+    config: &mut Config,
+    block: &BlockInfo,
+    token_id: String,
+    owner: CanonicalAddr,
+    memo: Option<String>,
+) -> StdResult<()> {
+    let action = StoredTxAction::SubscriptionRenewed { owner };
+    let tx = StoredTx {
+        tx_id: config.tx_cnt,
+        block_height: block.height,
+        block_time: block.time,
+        token_id,
+        action,
+        memo,
+    };
+    let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
+    json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
+    if let StoredTxAction::SubscriptionRenewed { owner } = tx.action {
+        append_tx_for_addr(storage, config.tx_cnt, &owner)?;
+    }
+    config.tx_cnt += 1;
+    Ok(())
+}
+
+/// Returns StdResult<()> after storing tx
+///
+/// # Arguments
+///
+/// * `storage` - a mutable reference to the storage this item should go to
+/// * `config` - a mutable reference to the contract Config
+/// * `block` - a reference to the current BlockInfo
+/// * `token_id` - token id being minted
+/// * `owner` - the previous owner's address
+/// * `burner` - optional address that burnt the token
+/// * `memo` - optional memo for the tx
+pub fn store_subscription_cancel<S: Storage>(
+    storage: &mut S,
+    config: &mut Config,
+    block: &BlockInfo,
+    token_id: String,
+    owner: CanonicalAddr,
+    memo: Option<String>,
+) -> StdResult<()> {
+    let action = StoredTxAction::SubcriptionCancelled { owner };
+    let tx = StoredTx {
+        tx_id: config.tx_cnt,
+        block_height: block.height,
+        block_time: block.time,
+        token_id,
+        action,
+        memo,
+    };
+    let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
+    json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
+    if let StoredTxAction::SubcriptionCancelled { owner } = tx.action {
+        append_tx_for_addr(storage, config.tx_cnt, &owner)?;
     }
     config.tx_cnt += 1;
     Ok(())

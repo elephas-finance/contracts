@@ -24,6 +24,7 @@ mod tests {
             royalty_info: None,
             config: None,
             post_init_callback: None,
+            subscription_info: None,
         };
 
         (init(&mut deps, env, init_msg), deps)

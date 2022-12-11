@@ -8,6 +8,7 @@ use secret_toolkit::permit::Permit;
 use crate::expiration::Expiration;
 use crate::mint_run::{MintRunInfo, SerialNumber};
 use crate::royalties::{DisplayRoyaltyInfo, RoyaltyInfo};
+use crate::subscription::Subscription;
 use crate::token::{Extension, Metadata};
 
 /// Instantiation message
@@ -31,6 +32,8 @@ pub struct InitMsg {
     /// contract that instantiated it, but it could be used to execute any
     /// contract
     pub post_init_callback: Option<PostInitCallback>,
+    /// optional subscription information to use to enable subscription based nfts
+    pub subscription_info: Option<Subscription>,
 }
 
 /// This type represents optional configuration values.
@@ -70,6 +73,9 @@ pub struct InitConfig {
     /// Indicates whether burn functionality should be enabled
     /// default: False
     pub enable_burn: Option<bool>,
+    /// Indicates whether subscription functionality should be enabled
+    /// default: False
+    pub enable_subscription: Option<bool>,
 }
 
 impl Default for InitConfig {
@@ -82,6 +88,7 @@ impl Default for InitConfig {
             minter_may_update_metadata: Some(true),
             owner_may_update_metadata: Some(false),
             enable_burn: Some(false),
+            enable_subscription: Some(false),
         }
     }
 }
@@ -404,6 +411,16 @@ pub enum HandleMsg {
         /// optional message length padding
         padding: Option<String>,
     },
+    RenewSubscription {
+        /// token to renew
+        token_id: String,
+        /// duration multiplied by Subscription.frequency needs to be added to expiry date
+        duration: u64,
+    },
+    CancelSubscription {
+        /// token to cancel subscription
+        token_id: String,
+    },
 }
 
 /// permission access level
@@ -573,6 +590,12 @@ pub enum HandleAnswer {
     RevokePermit {
         status: ResponseStatus,
     },
+    RenewSubscription {
+        status: ResponseStatus,
+    },
+    CancelSubscription {
+        status: ResponseStatus,
+    },
 }
 
 /// the address and viewing key making an authenticated query request
@@ -620,6 +643,16 @@ pub enum TxAction {
         owner: HumanAddr,
         /// burner's address if not owner
         burner: Option<HumanAddr>,
+    },
+    /// renwed subscription
+    SubscriptionRenewed {
+        /// owner
+        owner: HumanAddr,
+    },
+    /// cancelled subscription
+    SubcriptionCancelled {
+        /// owner
+        owner: HumanAddr,
     },
 }
 
@@ -829,6 +862,12 @@ pub enum QueryMsg {
         /// query to perform
         query: QueryWithPermit,
     },
+    /// check if the token is expired or not
+    IsSubscriptionExpired {
+        token_id: String,
+        /// optional address and key requesting to view the token information
+        viewer: Option<ViewerInfo>,
+    },
 }
 
 /// SNIP721 Approval
@@ -899,6 +938,7 @@ pub enum QueryAnswer {
         minter_may_update_metadata: bool,
         owner_may_update_metadata: bool,
         burn_is_enabled: bool,
+        subscription_is_enabled: bool,
     },
     Minters {
         minters: Vec<HumanAddr>,
@@ -991,6 +1031,9 @@ pub enum QueryAnswer {
     },
     ContractCreator {
         creator: Option<HumanAddr>,
+    },
+    IsExpired {
+        expired: bool,
     },
 }
 

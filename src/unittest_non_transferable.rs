@@ -38,6 +38,7 @@ mod tests {
             royalty_info: None,
             config: None,
             post_init_callback: None,
+            subscription_info: None,
         };
 
         (init(&mut deps, env, init_msg), deps)
@@ -86,6 +87,7 @@ mod tests {
             royalty_info: None,
             config: Some(init_config),
             post_init_callback: None,
+            subscription_info: None,
         };
 
         (init(&mut deps, env, init_msg), deps)
@@ -135,6 +137,7 @@ mod tests {
             royalty_info,
             config: Some(init_config),
             post_init_callback: None,
+            subscription_info: None,
         };
 
         (init(&mut deps, env, init_msg), deps)
@@ -225,6 +228,7 @@ mod tests {
             royalty_info: None,
             config: None,
             post_init_callback,
+            subscription_info: None,
         };
 
         let init_response = init(&mut deps, env, init_msg).unwrap();

@@ -8,6 +8,7 @@ mod rand;
 pub mod receiver;
 pub mod royalties;
 pub mod state;
+pub mod subscription;
 pub mod token;
 mod unittest_handles;
 mod unittest_inventory;

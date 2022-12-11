@@ -32,6 +32,7 @@ mod tests {
             royalty_info: None,
             config: None,
             post_init_callback: None,
+            subscription_info: None,
         };
 
         (init(&mut deps, env, init_msg), deps)
@@ -80,6 +81,7 @@ mod tests {
             royalty_info: None,
             config: Some(init_config),
             post_init_callback: None,
+            subscription_info: None,
         };
 
         (init(&mut deps, env, init_msg), deps)
@@ -148,6 +150,7 @@ mod tests {
                 minter_may_update_metadata,
                 owner_may_update_metadata,
                 burn_is_enabled,
+                subscription_is_enabled,
             } => {
                 assert_eq!(token_supply_is_public, false);
                 assert_eq!(owner_is_public, true);
@@ -156,6 +159,7 @@ mod tests {
                 assert_eq!(minter_may_update_metadata, true);
                 assert_eq!(owner_may_update_metadata, false);
                 assert_eq!(burn_is_enabled, true);
+                assert_eq!(subscription_is_enabled, true);
             }
             _ => panic!("unexpected"),
         }

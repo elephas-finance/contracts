@@ -14,15 +14,6 @@ use secret_toolkit::{
     utils::{pad_handle_result, pad_query_result},
 };
 
-use crate::expiration::Expiration;
-use crate::inventory::{Inventory, InventoryIter};
-use crate::mint_run::{SerialNumber, StoredMintRunInfo};
-use crate::msg::{
-    AccessLevel, BatchNftDossierElement, Burn, ContractStatus, Cw721Approval, Cw721OwnerOfResponse,
-    HandleAnswer, HandleMsg, InitMsg, Mint, QueryAnswer, QueryMsg, QueryWithPermit, ReceiverInfo,
-    ResponseStatus::Success, Send, Snip721Approval, Transfer, ViewerInfo,
-};
-use crate::rand::sha_256;
 use crate::receiver::{batch_receive_nft_msg, receive_nft_msg};
 use crate::royalties::{RoyaltyInfo, StoredRoyaltyInfo};
 use crate::state::{
@@ -32,9 +23,29 @@ use crate::state::{
     PREFIX_ALL_PERMISSIONS, PREFIX_AUTHLIST, PREFIX_INFOS, PREFIX_MAP_TO_ID, PREFIX_MAP_TO_INDEX,
     PREFIX_MINT_RUN, PREFIX_MINT_RUN_NUM, PREFIX_OWNER_PRIV, PREFIX_PRIV_META, PREFIX_PUB_META,
     PREFIX_RECEIVERS, PREFIX_REVOKED_PERMITS, PREFIX_ROYALTY_INFO, PREFIX_VIEW_KEY, PRNG_SEED_KEY,
+    SUBSCRIPTION_DETAILS_KEY,
 };
 use crate::token::{Metadata, Token};
 use crate::viewing_key::{ViewingKey, VIEWING_KEY_SIZE};
+use crate::{expiration::Expiration, subscription::Subscription};
+use crate::{
+    inventory::{Inventory, InventoryIter},
+    state::PREFIX_SUB_EXPIRY_INFO,
+};
+use crate::{
+    mint_run::{SerialNumber, StoredMintRunInfo},
+    state::store_subcription_renew,
+};
+use crate::{
+    msg::{
+        AccessLevel, BatchNftDossierElement, Burn, ContractStatus, Cw721Approval,
+        Cw721OwnerOfResponse, HandleAnswer, HandleMsg, InitMsg, Mint, QueryAnswer, QueryMsg,
+        QueryWithPermit, ReceiverInfo, ResponseStatus::Success, Send, Snip721Approval, Transfer,
+        ViewerInfo,
+    },
+    state::store_subscription_cancel,
+};
+use crate::{rand::sha_256, token};
 
 /// pad handle responses and log attributes to blocks of 256 bytes to prevent leaking info based on
 /// response size
@@ -87,6 +98,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         minter_may_update_metadata: init_config.minter_may_update_metadata.unwrap_or(true),
         owner_may_update_metadata: init_config.owner_may_update_metadata.unwrap_or(false),
         burn_is_enabled: init_config.enable_burn.unwrap_or(false),
+        subscription_is_enabled: init_config.enable_subscription.unwrap_or(false),
     };
 
     let minters = vec![admin_raw];
@@ -106,6 +118,14 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         )?;
     }
 
+    if msg.subscription_info.is_some() {
+        let subscription_info: Option<Subscription> = msg.subscription_info;
+        save(
+            &mut deps.storage,
+            SUBSCRIPTION_DETAILS_KEY,
+            &subscription_info,
+        )?;
+    }
     // perform the post init callback if needed
     let messages: Vec<CosmosMsg> = if let Some(callback) = msg.post_init_callback {
         let execute = WasmMsg::Execute {
@@ -444,6 +464,21 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         HandleMsg::RevokePermit { permit_name, .. } => {
             revoke_permit(&mut deps.storage, &env.message.sender, &permit_name)
         }
+        HandleMsg::RenewSubscription { token_id, duration } => renew_subscription(
+            deps,
+            env,
+            &mut config,
+            ContractStatus::Normal.to_u8(),
+            token_id,
+            duration,
+        ),
+        HandleMsg::CancelSubscription { token_id } => cancel_subscription(
+            deps,
+            env,
+            &mut config,
+            ContractStatus::Normal.to_u8(),
+            token_id,
+        ),
     };
     pad_handle_result(response, BLOCK_SIZE)
 }
@@ -1711,6 +1746,130 @@ fn revoke_permit<S: Storage>(
     })
 }
 
+/// Returns HandleResult
+///
+/// adds to expiry date for nft
+///
+/// # Arguments
+///
+/// * `deps` - mutable reference to Extern containing all the contract's external dependencies
+/// * `env` - Env of contract's environment
+/// * `config` - a reference to the Config
+/// * `priority` - u8 representation of highest status level this action is permitted at
+/// * `token_id - token id of the nft
+/// * `duration` - duration to be incremented on in multiples of Subscription.frequency
+pub fn renew_subscription<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    config: &mut Config,
+    priority: u8,
+    token_id: String,
+    duration: u64,
+) -> HandleResult {
+    check_status(config.status, priority)?;
+    let sender_raw = deps.api.canonical_address(&env.message.sender)?;
+    let opt_err = None;
+
+    let (token, _idx) = get_token(&mut deps.storage, &token_id, opt_err)?;
+    if token.owner != sender_raw {
+        return Err(StdError::generic_err(
+            "Not Authorized to perform this action",
+        ));
+    }
+
+    // get frequency
+    let sub_details: Subscription = may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
+
+    let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+        height: 1,
+        time: 1,
+        chain_id: "not used".to_string(),
+    });
+    // add the duration*frquency to expiration
+    let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
+    let may_exp: Expiration = may_load(&tokenexps, token_id.as_bytes())?.unwrap();
+    may_exp.add_time(&block, duration, sub_details.frequency);
+
+    save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
+
+    store_subcription_renew(
+        &mut deps.storage,
+        config,
+        &block,
+        token_id,
+        sender_raw,
+        None,
+    )?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RenewSubscription {
+            status: Success,
+        })?),
+    })
+}
+
+/// Returns HandleResult
+///
+/// burn the token when asked to cancel the subscription
+///
+/// # Arguments
+///
+/// * `deps` - mutable reference to Extern containing all the contract's external dependencies
+/// * `env` - Env of contract's environment
+/// * `config` - a reference to the Config
+/// * `priority` - u8 representation of highest status level this action is permitted at
+pub fn cancel_subscription<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    config: &mut Config,
+    priority: u8,
+    token_id: String,
+) -> HandleResult {
+    check_status(config.status, priority)?;
+    check_status(config.status, priority)?;
+    let sender_raw = deps.api.canonical_address(&env.message.sender)?;
+    let opt_err = None;
+
+    let (token, _idx) = get_token(&mut deps.storage, &token_id, opt_err)?;
+    if token.owner != sender_raw {
+        return Err(StdError::generic_err(
+            "Not Authorized to perform this action",
+        ));
+    }
+
+    // get frequency
+
+    let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+        height: 1,
+        time: 1,
+        chain_id: "not used".to_string(),
+    });
+    // add the duration*frquency to expiration
+    let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
+    let may_exp: Expiration = Expiration::AtTime(block.time);
+
+    save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
+
+    store_subscription_cancel(
+        &mut deps.storage,
+        config,
+        &block,
+        token_id,
+        sender_raw,
+        None,
+    )?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::CancelSubscription {
+            status: Success,
+        })?),
+    })
+}
+
 /////////////////////////////////////// Query /////////////////////////////////////
 /// Returns QueryResult
 ///
@@ -1823,6 +1982,9 @@ pub fn query<S: Storage, A: Api, Q: Querier>(deps: &Extern<S, A, Q>, msg: QueryM
         }
         QueryMsg::RegisteredCodeHash { contract } => query_code_hash(deps, &contract),
         QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
+        QueryMsg::IsSubscriptionExpired { token_id, viewer } => {
+            is_subscription_expired(deps, token_id, viewer)
+        }
     };
     pad_query_result(response, BLOCK_SIZE)
 }
@@ -2031,6 +2193,7 @@ pub fn query_config<S: ReadonlyStorage>(storage: &S) -> QueryResult {
         minter_may_update_metadata: config.minter_may_update_metadata,
         owner_may_update_metadata: config.owner_may_update_metadata,
         burn_is_enabled: config.burn_is_enabled,
+        subscription_is_enabled: config.subscription_is_enabled,
     })
 }
 
@@ -3027,6 +3190,34 @@ pub fn query_code_hash<S: Storage, A: Api, Q: Querier>(
 ) -> QueryResult {
     let contract_raw = deps.api.canonical_address(contract)?;
     let store = ReadonlyPrefixedStorage::new(PREFIX_RECEIVERS, &deps.storage);
+    let may_reg_rec: Option<ReceiveRegistration> = may_load(&store, contract_raw.as_slice())?;
+    if let Some(reg_rec) = may_reg_rec {
+        return to_binary(&QueryAnswer::RegisteredCodeHash {
+            code_hash: Some(reg_rec.code_hash),
+            also_implements_batch_receive_nft: reg_rec.impl_batch,
+        });
+    }
+    to_binary(&QueryAnswer::RegisteredCodeHash {
+        code_hash: None,
+        also_implements_batch_receive_nft: false,
+    })
+}
+
+/// Returns QueryResult displaying if the subscription has expired or not
+///
+/// # Arguments
+///
+/// * `deps` - a reference to Extern containing all the contract's external dependencies
+/// * `contract` - a reference to the contract's address whose code hash is being requested
+/// * `token_id` - id of the token to be searched
+/// * `viewer` - optional address and key making an authenticated query request
+pub fn is_subscription_expired<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    token_id: String,
+    viewer: ViewerInfo,
+) -> QueryResult {
+    let contract_raw = deps.api.canonical_address(contract)?;
+    let store = ReadonlyPrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &deps.storage);
     let may_reg_rec: Option<ReceiveRegistration> = may_load(&store, contract_raw.as_slice())?;
     if let Some(reg_rec) = may_reg_rec {
         return to_binary(&QueryAnswer::RegisteredCodeHash {
@@ -4654,7 +4845,25 @@ fn mint_list<S: Storage, A: Api, Q: Querier>(
             )?;
         }
         //
-        //
+
+        // add expiry details
+        if config.subscription_is_enabled {
+            let block: BlockInfo =
+                may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+                    height: 1,
+                    time: 1,
+                    chain_id: "not used".to_string(),
+                });
+
+            let sub_details: Subscription =
+                may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
+
+            let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
+            let may_exp: Expiration =
+                Expiration::AtTime(block.time).add_time(&block, 1, sub_details.frequency);
+
+            save(&mut tokenexps, id.as_bytes(), &may_exp)?;
+        }
 
         // store the tx
         store_mint(
