@@ -14,6 +14,7 @@ use secret_toolkit::{
     utils::{pad_handle_result, pad_query_result},
 };
 
+use crate::rand::sha_256;
 use crate::receiver::{batch_receive_nft_msg, receive_nft_msg};
 use crate::royalties::{RoyaltyInfo, StoredRoyaltyInfo};
 use crate::state::{
@@ -45,7 +46,6 @@ use crate::{
     },
     state::store_subscription_cancel,
 };
-use crate::{rand::sha_256, token};
 
 /// pad handle responses and log attributes to blocks of 256 bytes to prevent leaking info based on
 /// response size
@@ -1767,6 +1767,9 @@ pub fn renew_subscription<S: Storage, A: Api, Q: Querier>(
     duration: u64,
 ) -> HandleResult {
     check_status(config.status, priority)?;
+    if !config.subscription_is_enabled {
+        return Err(StdError::generic_err("Subscription is not enabled"));
+    }
     let sender_raw = deps.api.canonical_address(&env.message.sender)?;
     let opt_err = None;
 
@@ -1780,22 +1783,17 @@ pub fn renew_subscription<S: Storage, A: Api, Q: Querier>(
     // get frequency
     let sub_details: Subscription = may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
 
-    let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
-        height: 1,
-        time: 1,
-        chain_id: "not used".to_string(),
-    });
     // add the duration*frquency to expiration
     let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
     let may_exp: Expiration = may_load(&tokenexps, token_id.as_bytes())?.unwrap();
-    may_exp.add_time(&block, duration, sub_details.frequency);
+    may_exp.add_time(&env.block, duration, sub_details.frequency);
 
     save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
 
     store_subcription_renew(
         &mut deps.storage,
         config,
-        &block,
+        &env.block,
         token_id,
         sender_raw,
         None,
@@ -1828,7 +1826,10 @@ pub fn cancel_subscription<S: Storage, A: Api, Q: Querier>(
     token_id: String,
 ) -> HandleResult {
     check_status(config.status, priority)?;
-    check_status(config.status, priority)?;
+    if !config.subscription_is_enabled {
+        return Err(StdError::generic_err("Subscription is not enabled"));
+    }
+
     let sender_raw = deps.api.canonical_address(&env.message.sender)?;
     let opt_err = None;
 
@@ -1839,23 +1840,16 @@ pub fn cancel_subscription<S: Storage, A: Api, Q: Querier>(
         ));
     }
 
-    // get frequency
-
-    let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
-        height: 1,
-        time: 1,
-        chain_id: "not used".to_string(),
-    });
     // add the duration*frquency to expiration
     let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-    let may_exp: Expiration = Expiration::AtTime(block.time);
+    let may_exp: Expiration = Expiration::AtTime(env.block.time);
 
     save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
 
     store_subscription_cancel(
         &mut deps.storage,
         config,
-        &block,
+        &env.block,
         token_id,
         sender_raw,
         None,
@@ -3214,7 +3208,7 @@ pub fn query_code_hash<S: Storage, A: Api, Q: Querier>(
 pub fn is_subscription_expired<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     token_id: String,
-    viewer: Option<ViewerInfo>,
+    _viewer: Option<ViewerInfo>,
 ) -> QueryResult {
     let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
         height: 1,
