@@ -527,6 +527,44 @@
           }
         }
       }
+    },
+    {
+      "type": "object",
+      "required": [
+        "renew_subscription"
+      ],
+      "properties": {
+        "renew_subscription": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/definitions/ResponseStatus"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "cancel_subscription"
+      ],
+      "properties": {
+        "cancel_subscription": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/definitions/ResponseStatus"
+            }
+          }
+        }
+      }
     }
   ],
   "definitions": {

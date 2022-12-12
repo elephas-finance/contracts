@@ -61,6 +61,17 @@
         }
       ]
     },
+    "subscription_info": {
+      "description": "optional subscription information to use to enable subscription based nfts",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Subscription"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "symbol": {
       "description": "token contract symbol",
       "type": "string"
@@ -102,6 +113,13 @@
         },
         "enable_sealed_metadata": {
           "description": "indicates whether sealed metadata should be enabled.  If sealed metadata is enabled, the private metadata is not viewable by anyone, not even the owner, until the owner calls the Reveal function.  When Reveal is called, the sealed metadata is irreversibly moved to the public metadata (as default).  if unwrapped_metadata_is_private is set to true, it will remain as private metadata, but the owner will now be able to see it.  Anyone will be able to query the token to know that it has been unwrapped.  This simulates buying/selling a wrapped card that no one knows which card it is until it is unwrapped. If sealed metadata is not enabled, all tokens are considered unwrapped default:  False",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "enable_subscription": {
+          "description": "Indicates whether subscription functionality should be enabled default: False",
           "type": [
             "boolean",
             "null"
@@ -227,6 +245,28 @@
           "items": {
             "$ref": "#/definitions/Royalty"
           }
+        }
+      }
+    },
+    "Subscription": {
+      "description": "data for a subscription details",
+      "type": "object",
+      "required": [
+        "frequency",
+        "rate"
+      ],
+      "properties": {
+        "frequency": {
+          "description": "frequency of subscription renewal",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "rate": {
+          "description": "subscription rate",
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
         }
       }
     },

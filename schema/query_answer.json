@@ -39,6 +39,7 @@
             "owner_is_public",
             "owner_may_update_metadata",
             "sealed_metadata_is_enabled",
+            "subscription_is_enabled",
             "token_supply_is_public",
             "unwrapped_metadata_is_private"
           ],
@@ -56,6 +57,9 @@
               "type": "boolean"
             },
             "sealed_metadata_is_enabled": {
+              "type": "boolean"
+            },
+            "subscription_is_enabled": {
               "type": "boolean"
             },
             "token_supply_is_public": {
@@ -711,6 +715,25 @@
                   "type": "null"
                 }
               ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "is_subscription_expired"
+      ],
+      "properties": {
+        "is_subscription_expired": {
+          "type": "object",
+          "required": [
+            "expired"
+          ],
+          "properties": {
+            "expired": {
+              "type": "boolean"
             }
           }
         }
@@ -1473,6 +1496,56 @@
                 },
                 "owner": {
                   "description": "previous owner",
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/HumanAddr"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "renwed subscription",
+          "type": "object",
+          "required": [
+            "subscription_renewed"
+          ],
+          "properties": {
+            "subscription_renewed": {
+              "type": "object",
+              "required": [
+                "owner"
+              ],
+              "properties": {
+                "owner": {
+                  "description": "owner",
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/HumanAddr"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "cancelled subscription",
+          "type": "object",
+          "required": [
+            "subcription_cancelled"
+          ],
+          "properties": {
+            "subcription_cancelled": {
+              "type": "object",
+              "required": [
+                "owner"
+              ],
+              "properties": {
+                "owner": {
+                  "description": "owner",
                   "allOf": [
                     {
                       "$ref": "#/definitions/HumanAddr"

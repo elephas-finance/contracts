@@ -747,6 +747,37 @@
           }
         }
       }
+    },
+    {
+      "description": "check if the token is expired or not",
+      "type": "object",
+      "required": [
+        "is_subscription_expired"
+      ],
+      "properties": {
+        "is_subscription_expired": {
+          "type": "object",
+          "required": [
+            "token_id"
+          ],
+          "properties": {
+            "token_id": {
+              "type": "string"
+            },
+            "viewer": {
+              "description": "optional address and key requesting to view the token information",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ViewerInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
     }
   ],
   "definitions": {

@@ -1173,6 +1173,53 @@
           }
         }
       }
+    },
+    {
+      "type": "object",
+      "required": [
+        "renew_subscription"
+      ],
+      "properties": {
+        "renew_subscription": {
+          "type": "object",
+          "required": [
+            "duration",
+            "token_id"
+          ],
+          "properties": {
+            "duration": {
+              "description": "duration multiplied by Subscription.frequency needs to be added to expiry date",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "token_id": {
+              "description": "token to renew",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "cancel_subscription"
+      ],
+      "properties": {
+        "cancel_subscription": {
+          "type": "object",
+          "required": [
+            "token_id"
+          ],
+          "properties": {
+            "token_id": {
+              "description": "token to cancel subscription",
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   ],
   "definitions": {
