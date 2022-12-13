@@ -46,26 +46,6 @@ impl Expiration {
             Expiration::Never => false,
         }
     }
-
-    pub fn add_time(&self, block: &BlockInfo, duration: u64, frequency: u64) -> Expiration {
-        match self {
-            Expiration::AtTime(time) => {
-                if block.time >= *time {
-                    Expiration::AtTime(block.time + (duration * frequency))
-                } else {
-                    Expiration::AtTime(*time + (duration * frequency))
-                }
-            }
-            Expiration::AtHeight(height) => {
-                if block.height >= *height {
-                    Expiration::AtHeight(block.height + (duration * frequency))
-                } else {
-                    Expiration::AtHeight(*height + (duration * frequency))
-                }
-            }
-            Expiration::Never => Expiration::Never,
-        }
-    }
 }
 
 #[cfg(test)]

@@ -159,7 +159,7 @@ mod tests {
                 assert_eq!(minter_may_update_metadata, true);
                 assert_eq!(owner_may_update_metadata, false);
                 assert_eq!(burn_is_enabled, true);
-                assert_eq!(subscription_is_enabled, true);
+                assert_eq!(subscription_is_enabled, false);
             }
             _ => panic!("unexpected"),
         }

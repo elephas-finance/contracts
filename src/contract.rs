@@ -120,7 +120,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
 
     if msg.subscription_info.is_some() {
         let subscription_info: Option<Subscription> = msg.subscription_info;
-        save(
+        json_save(
             &mut deps.storage,
             SUBSCRIPTION_DETAILS_KEY,
             &subscription_info,
@@ -1781,12 +1781,16 @@ pub fn renew_subscription<S: Storage, A: Api, Q: Querier>(
     }
 
     // get frequency
-    let sub_details: Subscription = may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
+    let sub_details: Subscription =
+        json_may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
 
     // add the duration*frquency to expiration
     let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-    let may_exp: Expiration = may_load(&tokenexps, token_id.as_bytes())?.unwrap();
-    may_exp.add_time(&env.block, duration, sub_details.frequency);
+    let mut may_exp: u64 = may_load(&tokenexps, token_id.as_bytes())?.unwrap_or(0);
+    if may_exp < env.block.time {
+        may_exp = env.block.time;
+    }
+    may_exp = may_exp + (duration * sub_details.frequency);
 
     json_save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
     // save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
@@ -1843,7 +1847,7 @@ pub fn cancel_subscription<S: Storage, A: Api, Q: Querier>(
 
     // add the duration*frquency to expiration
     let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-    let may_exp: Expiration = Expiration::AtTime(env.block.time);
+    let may_exp: u64 = env.block.time;
 
     json_save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
     // save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
@@ -3219,14 +3223,14 @@ pub fn is_subscription_expired<S: Storage, A: Api, Q: Querier>(
     });
 
     let store = ReadonlyPrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &deps.storage);
-    let may_exp: Option<Expiration> = json_may_load(&store, token_id.as_bytes())?;
+    let may_exp: Option<u64> = json_may_load(&store, token_id.as_bytes())?;
     if may_exp.is_none() {
         return to_binary(&QueryAnswer::IsSubscriptionExpired { expired: false });
     }
     let expiry = may_exp.unwrap();
 
     to_binary(&QueryAnswer::IsSubscriptionExpired {
-        expired: expiry.is_expired(&block),
+        expired: expiry <= block.time,
     })
 }
 
@@ -4847,20 +4851,11 @@ fn mint_list<S: Storage, A: Api, Q: Querier>(
 
         // add expiry details
         if config.subscription_is_enabled {
-            let block: BlockInfo =
-                may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
-                    height: 1,
-                    time: 1,
-                    chain_id: "not used".to_string(),
-                });
-
             let sub_details: Subscription =
-                may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
+                json_may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
 
             let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-            let may_exp: Expiration =
-                Expiration::AtTime(block.time).add_time(&block, 1, sub_details.frequency);
-
+            let may_exp: u64 = env.block.time + sub_details.frequency;
             json_save(&mut tokenexps, id.as_bytes(), &may_exp)?;
             // save(&mut tokenexps, id.as_bytes(), &may_exp)?;
         }
