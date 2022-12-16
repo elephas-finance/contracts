@@ -738,6 +738,27 @@
           }
         }
       }
+    },
+    {
+      "type": "object",
+      "required": [
+        "time_to_expiration"
+      ],
+      "properties": {
+        "time_to_expiration": {
+          "type": "object",
+          "required": [
+            "time_left"
+          ],
+          "properties": {
+            "time_left": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      }
     }
   ],
   "definitions": {
@@ -991,38 +1012,20 @@
       "description": "at the given point in time and after, Expiration will be considered expired",
       "anyOf": [
         {
-          "type": "string",
-          "enum": [
-            "never"
-          ]
-        },
-        {
           "description": "expires at this block height",
-          "type": "object",
-          "required": [
-            "at_height"
-          ],
-          "properties": {
-            "at_height": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         },
         {
           "description": "expires at the time in seconds since 01/01/1970",
-          "type": "object",
-          "required": [
-            "at_time"
-          ],
-          "properties": {
-            "at_time": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        {
+          "description": "never expires",
+          "type": "null"
         }
       ]
     },

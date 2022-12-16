@@ -1,3 +1,4 @@
+use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -8,5 +9,5 @@ pub struct Subscription {
     /// frequency of subscription renewal
     pub frequency: u64,
     /// subscription rate
-    pub rate: u16,
+    pub rate: Uint128,
 }

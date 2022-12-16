@@ -1183,16 +1183,9 @@
         "renew_subscription": {
           "type": "object",
           "required": [
-            "duration",
             "token_id"
           ],
           "properties": {
-            "duration": {
-              "description": "duration multiplied by Subscription.frequency needs to be added to expiry date",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
             "token_id": {
               "description": "token to renew",
               "type": "string"
@@ -1292,38 +1285,20 @@
       "description": "at the given point in time and after, Expiration will be considered expired",
       "anyOf": [
         {
-          "type": "string",
-          "enum": [
-            "never"
-          ]
-        },
-        {
           "description": "expires at this block height",
-          "type": "object",
-          "required": [
-            "at_height"
-          ],
-          "properties": {
-            "at_height": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         },
         {
           "description": "expires at the time in seconds since 01/01/1970",
-          "type": "object",
-          "required": [
-            "at_time"
-          ],
-          "properties": {
-            "at_time": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        {
+          "description": "never expires",
+          "type": "null"
         }
       ]
     },

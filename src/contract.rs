@@ -464,13 +464,12 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         HandleMsg::RevokePermit { permit_name, .. } => {
             revoke_permit(&mut deps.storage, &env.message.sender, &permit_name)
         }
-        HandleMsg::RenewSubscription { token_id, duration } => renew_subscription(
+        HandleMsg::RenewSubscription { token_id } => renew_subscription(
             deps,
             env,
             &mut config,
             ContractStatus::Normal.to_u8(),
             token_id,
-            duration,
         ),
         HandleMsg::CancelSubscription { token_id } => cancel_subscription(
             deps,
@@ -518,12 +517,31 @@ pub fn mint<S: Storage, A: Api, Q: Querier>(
 ) -> HandleResult {
     check_status(config.status, priority)?;
     let sender_raw = deps.api.canonical_address(&env.message.sender)?;
-    let minters: Vec<CanonicalAddr> = may_load(&deps.storage, MINTERS_KEY)?.unwrap_or_default();
-    if !minters.contains(&sender_raw) {
+    // let minters: Vec<CanonicalAddr> = may_load(&deps.storage, MINTERS_KEY)?.unwrap_or_default();
+    // if !minters.contains(&sender_raw) {
+    //     return Err(StdError::generic_err(
+    //         "Only designated minters are allowed to mint",
+    //     ));
+    // }
+    // get rate from subscription
+    let sub_details: Subscription =
+        json_may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
+    let rate = sub_details.rate;
+
+    // get sent_funds
+    if env.message.sent_funds.len() != 1 {
         return Err(StdError::generic_err(
-            "Only designated minters are allowed to mint",
+            "Must send exactly one payment to mint a token",
         ));
     }
+    let sent_funds = env.message.sent_funds[0].clone();
+
+    if sent_funds.amount != rate {
+        return Err(StdError::generic_err(
+            "Must send exactly the subscription rate to mint a token",
+        ));
+    }
+
     let mints = vec![Mint {
         token_id,
         owner,
@@ -1764,7 +1782,6 @@ pub fn renew_subscription<S: Storage, A: Api, Q: Querier>(
     config: &mut Config,
     priority: u8,
     token_id: String,
-    duration: u64,
 ) -> HandleResult {
     check_status(config.status, priority)?;
     if !config.subscription_is_enabled {
@@ -1780,17 +1797,34 @@ pub fn renew_subscription<S: Storage, A: Api, Q: Querier>(
         ));
     }
 
-    // get frequency
+    // get sent_funds
+    let sent_funds = env.message.sent_funds;
+    if sent_funds.len() != 1 {
+        return Err(StdError::generic_err(
+            "Must send exactly one payment to renew subscription",
+        ));
+    }
+
+    let sent_funds = sent_funds[0].clone();
+
     let sub_details: Subscription =
         json_may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
+    let rate = sub_details.rate;
 
+    let duration = sent_funds.amount.u128() / rate.u128();
+    if duration == 0 {
+        return Err(StdError::generic_err(
+            "Must send enough funds to renew subscription",
+        ));
+    }
     // add the duration*frquency to expiration
     let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-    let mut may_exp: u64 = may_load(&tokenexps, token_id.as_bytes())?.unwrap_or(0);
+    let mut may_exp: u64 = json_may_load(&tokenexps, token_id.as_bytes())?.unwrap();
+    // compare with block time
     if may_exp < env.block.time {
         may_exp = env.block.time;
     }
-    may_exp = may_exp + (duration * sub_details.frequency);
+    may_exp = may_exp + (duration as u64 * sub_details.frequency);
 
     json_save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
     // save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
@@ -1847,7 +1881,7 @@ pub fn cancel_subscription<S: Storage, A: Api, Q: Querier>(
 
     // add the duration*frquency to expiration
     let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-    let may_exp: u64 = env.block.time;
+    let may_exp = env.block.time;
 
     json_save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
     // save(&mut tokenexps, token_id.as_bytes(), &may_exp)?;
@@ -1984,6 +2018,9 @@ pub fn query<S: Storage, A: Api, Q: Querier>(deps: &Extern<S, A, Q>, msg: QueryM
         QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
         QueryMsg::IsSubscriptionExpired { token_id, viewer } => {
             is_subscription_expired(deps, token_id, viewer)
+        }
+        QueryMsg::TimeToExpiration { token_id, viewer } => {
+            time_to_expiration(deps, token_id, viewer)
         }
     };
     pad_query_result(response, BLOCK_SIZE)
@@ -3224,13 +3261,37 @@ pub fn is_subscription_expired<S: Storage, A: Api, Q: Querier>(
 
     let store = ReadonlyPrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &deps.storage);
     let may_exp: Option<u64> = json_may_load(&store, token_id.as_bytes())?;
-    if may_exp.is_none() {
-        return to_binary(&QueryAnswer::IsSubscriptionExpired { expired: false });
-    }
     let expiry = may_exp.unwrap();
 
     to_binary(&QueryAnswer::IsSubscriptionExpired {
-        expired: expiry <= block.time,
+        expired: expiry > block.time,
+    })
+}
+
+/// Returns QueryResult displaying the token's time left for expiry
+pub fn time_to_expiration<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    token_id: String,
+    _viewer: Option<ViewerInfo>,
+) -> QueryResult {
+    let block: BlockInfo = may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+        height: 1,
+        time: 1,
+        chain_id: "not used".to_string(),
+    });
+
+    let store = ReadonlyPrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &deps.storage);
+    let may_exp: Option<u64> = json_may_load(&store, token_id.as_bytes())?;
+    let expiry = may_exp.unwrap();
+    let res;
+    if expiry < block.time {
+        res = 0;
+    } else {
+        res = expiry - block.time;
+    }
+    to_binary(&QueryAnswer::TimeToExpiration {
+        time_left: res,
+        blocktime: block.time,
     })
 }
 
@@ -4851,11 +4912,19 @@ fn mint_list<S: Storage, A: Api, Q: Querier>(
 
         // add expiry details
         if config.subscription_is_enabled {
+            let block: BlockInfo =
+                may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+                    height: 1,
+                    time: 1,
+                    chain_id: "not used".to_string(),
+                });
+
             let sub_details: Subscription =
                 json_may_load(&deps.storage, SUBSCRIPTION_DETAILS_KEY)?.unwrap();
 
             let mut tokenexps = PrefixedStorage::new(PREFIX_SUB_EXPIRY_INFO, &mut deps.storage);
-            let may_exp: u64 = env.block.time + sub_details.frequency;
+            let may_exp = block.time + sub_details.frequency;
+
             json_save(&mut tokenexps, id.as_bytes(), &may_exp)?;
             // save(&mut tokenexps, id.as_bytes(), &may_exp)?;
         }

@@ -265,7 +265,7 @@
         "rate": {
           "description": "subscription rate",
           "type": "integer",
-          "format": "uint16",
+          "format": "uint128",
           "minimum": 0.0
         }
       }

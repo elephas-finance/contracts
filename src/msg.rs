@@ -414,8 +414,6 @@ pub enum HandleMsg {
     RenewSubscription {
         /// token to renew
         token_id: String,
-        /// duration multiplied by Subscription.frequency needs to be added to expiry date
-        duration: u64,
     },
     CancelSubscription {
         /// token to cancel subscription
@@ -868,6 +866,12 @@ pub enum QueryMsg {
         /// optional address and key requesting to view the token information
         viewer: Option<ViewerInfo>,
     },
+    /// check time to expiration
+    TimeToExpiration {
+        token_id: String,
+        /// optional address and key requesting to view the token information
+        viewer: Option<ViewerInfo>,
+    },
 }
 
 /// SNIP721 Approval
@@ -1034,6 +1038,10 @@ pub enum QueryAnswer {
     },
     IsSubscriptionExpired {
         expired: bool,
+    },
+    TimeToExpiration {
+        time_left: u64,
+        blocktime: u64,
     },
 }
 

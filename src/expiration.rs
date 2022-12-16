@@ -6,6 +6,7 @@ use std::fmt;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 /// at the given point in time and after, Expiration will be considered expired
 pub enum Expiration {
     /// expires at this block height
@@ -46,6 +47,45 @@ impl Expiration {
             Expiration::Never => false,
         }
     }
+    pub fn add_time(&self, block: &BlockInfo, duration: u64, frequency: u64) -> Expiration {
+        match self {
+            Expiration::AtTime(time) => {
+                if block.time >= *time {
+                    Expiration::AtTime(block.time + (duration * frequency))
+                } else {
+                    Expiration::AtTime((*time) + (duration * frequency))
+                }
+            }
+            Expiration::AtHeight(height) => {
+                if block.height >= *height {
+                    Expiration::AtHeight(block.height + (duration * frequency))
+                } else {
+                    Expiration::AtHeight((*height) + (duration * frequency))
+                }
+            }
+            Expiration::Never => Expiration::Never,
+        }
+    }
+
+    pub fn time_left(&self, block: &BlockInfo) -> u64 {
+        match self {
+            Expiration::AtTime(time) => {
+                if block.time >= *time {
+                    0
+                } else {
+                    *time - block.time
+                }
+            }
+            Expiration::AtHeight(height) => {
+                if block.height >= *height {
+                    0
+                } else {
+                    *height - block.height
+                }
+            }
+            Expiration::Never => 1000000000000000000,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -78,5 +118,6 @@ mod test {
         assert!(exp_t1000000.is_expired(&block_h1000_t1000000));
         assert!(!exp_t1500000.is_expired(&block_h1000_t1000000));
         assert!(exp_t1500000.is_expired(&block_h2000_t2000000));
+        assert!(exp_t1000000.time_left(&block_h2000_t2000000) == 0);
     }
 }
